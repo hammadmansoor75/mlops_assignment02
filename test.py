@@ -10,6 +10,27 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+from airflow.utils.dates import days_ago
+
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+}
+
+dag = DAG(
+    'data_extraction_transformation_upload',
+    default_args=default_args,
+    description='A simple ETL DAG for extracting, transforming, and uploading data',
+    schedule_interval='@daily',
+    start_date=days_ago(0),
+    catchup=False,
+)
 
 
 
@@ -69,12 +90,47 @@ def extract_and_transform(url, file_name):
 dawn_url = 'https://www.dawn.com/'
 bbc_url = 'https://www.bbc.com/'
 
-
 # Extracting and transforming data from dawn.com
 extract_and_transform(dawn_url, "dawn_data.txt")
-
-# Extracting and transforming data from bbc.com
+ # Extracting and transforming data from bbc.com
 extract_and_transform(bbc_url, "bbc_data.txt")
+
+
+
+
+def extract_transform_dawn():
+    # Extracting and transforming data from dawn.com
+    extract_and_transform(dawn_url, "dawn_data.txt")
+
+
+
+def extract_transform_bbc():
+    # Extracting and transforming data from bbc.com
+    extract_and_transform(bbc_url, "bbc_data.txt")
+
+
+def upload_dawn():
+    gauth = GoogleAuth()
+    gauth.LocalWebserverAuth()  # Creates local webserver and auto handles authentication.
+    drive = GoogleDrive(gauth)
+    file_path2 = "dawn_data.txt"
+    folder_id = "1F3JbxtgLc0yTsye--78NdCl3cKgR8meE"  # You can find the folder ID in the URL of the folder.
+    file2 = drive.CreateFile({'parents': [{'id': folder_id}]})
+    file2.SetContentFile(file_path2)
+    file2.Upload()
+    print(" DAWNFile uploaded successfully!")
+
+
+def upload_bbc():
+    gauth = GoogleAuth()
+    gauth.LocalWebserverAuth()  # Creates local webserver and auto handles authentication.
+    drive = GoogleDrive(gauth)
+    file_path = "bbc_data.txt"
+    folder_id = "1F3JbxtgLc0yTsye--78NdCl3cKgR8meE"  # You can find the folder ID in the URL of the folder.
+    file = drive.CreateFile({'parents': [{'id': folder_id}]})
+    file.SetContentFile(file_path)
+    file.Upload()
+    print(" BBCFile uploaded successfully!")
 
 def upload_google_drive():
     gauth = GoogleAuth()
@@ -99,3 +155,29 @@ def upload_google_drive():
 
 
 upload_google_drive()
+
+with dag:
+    extract_transform_dawn_task = PythonOperator(
+        task_id='extract_transform_dawn',
+        python_callable=extract_transform_dawn,
+    )
+
+    extract_transform_bbc_task = PythonOperator(
+        task_id='extract_transform_bbc',
+        python_callable=extract_transform_bbc,
+    )
+
+    upload_dawn_task = PythonOperator(
+        task_id='upload_dawn',
+        python_callable=upload_dawn,
+    )
+
+    upload_bbc_task = PythonOperator(
+        task_id='upload_bbc',
+        python_callable=upload_bbc,
+    )
+
+    extract_transform_dawn_task >> upload_dawn_task
+    extract_transform_bbc_task >> upload_bbc_task
+
+
